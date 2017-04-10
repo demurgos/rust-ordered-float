@@ -596,34 +596,55 @@ mod impl_rustc {
 mod impl_serde {
     extern crate serde;
     use self::serde::{Serialize, Serializer, Deserialize, Deserializer};
-    use self::serde::de::Error;
+    use self::serde::de::{Error, Unexpected};
     use super::{OrderedFloat, NotNaN};
     use num_traits::Float;
+    use std::fmt;
 
     impl<T: Float + Serialize> Serialize for OrderedFloat<T> {
-        fn serialize<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
             self.0.serialize(s)
         }
     }
 
     impl<T: Float + Deserialize> Deserialize for OrderedFloat<T> {
-        fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+        fn deserialize<D: Deserializer>(d: D) -> Result<Self, D::Error> {
             T::deserialize(d).map(OrderedFloat)
         }
     }
 
     impl<T: Float + Serialize> Serialize for NotNaN<T> {
-        fn serialize<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
             self.0.serialize(s)
         }
     }
 
     impl<T: Float + Deserialize> Deserialize for NotNaN<T> {
-        fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+        fn deserialize<D: Deserializer>(d: D) -> Result<Self, D::Error> {
+            struct OrderedFloatVisitor;
+            impl serde::de::Visitor for OrderedFloatVisitor {
+                type Value = T;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("OrderedFloat")
+                }
+            }
+
             T::deserialize(d).and_then(|v| {
                 NotNaN::new(v)
-                    .map_err(|_| <D::Error as Error>::invalid_value("value cannot be NaN"))
+                    .map_err(|_| <D::Error as Error>::invalid_value(
+                        Unexpected::Other("value cannot be NaN"),
+                        &OrderedFloatVisitor
+                    ))
             })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn test_ordered_float_f64() {
+            unimplemented!()
         }
     }
 }
